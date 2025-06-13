@@ -19,6 +19,7 @@
     "test": "cross-env PLAYWRIGHT=True playwright test"
   },
   "dependencies": {
+    "@ai-sdk/fal": "^0.1.12",
     "@ai-sdk/openai": "^1.3.22",
     "@ai-sdk/react": "^1.2.11",
     "@ai-sdk/xai": "^1.2.15",

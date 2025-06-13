@@ -4,6 +4,7 @@ import {
   wrapLanguageModel,
 } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { fal } from '@ai-sdk/fal';
 import { isTestEnvironment } from '../constants';
 import {
   artifactModel,
@@ -32,6 +33,6 @@ export const myProvider = isTestEnvironment
         'artifact-model': openai('gpt-4o'),
       },
       imageModels: {
-        'small-model': openai.image('dall-e-3'),
+        'small-model': fal.image('fal-ai/fast-sdxl'),
       },
     });
