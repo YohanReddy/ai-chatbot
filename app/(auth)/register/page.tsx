@@ -7,9 +7,8 @@ import { useActionState, useEffect, useState } from 'react';
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
 
-import { register, type RegisterActionState } from '../actions';
+import { signUpAction } from '../actions';
 import { toast } from '@/components/toast';
-import { useSession } from 'next-auth/react';
 
 export default function Page() {
   const router = useRouter();
@@ -17,33 +16,26 @@ export default function Page() {
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
 
-  const [state, formAction] = useActionState<RegisterActionState, FormData>(
-    register,
-    {
-      status: 'idle',
+  const [state, formAction] = useActionState<any, FormData>(
+    async (_: any, formData: FormData) => {
+      return await signUpAction(formData);
     },
+    {},
   );
 
-  const { update: updateSession } = useSession();
-
   useEffect(() => {
-    if (state.status === 'user_exists') {
-      toast({ type: 'error', description: 'Account already exists!' });
-    } else if (state.status === 'failed') {
-      toast({ type: 'error', description: 'Failed to create account!' });
-    } else if (state.status === 'invalid_data') {
+    if (state?.error) {
       toast({
         type: 'error',
-        description: 'Failed validating your submission!',
+        description: state.error,
       });
-    } else if (state.status === 'success') {
-      toast({ type: 'success', description: 'Account created successfully!' });
-
+    } else if (state?.success) {
+      toast({ type: 'success', description: state.success });
       setIsSuccessful(true);
-      updateSession();
+      router.push('/');
       router.refresh();
     }
-  }, [state]);
+  }, [state, router]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get('email') as string);

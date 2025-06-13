@@ -1,4 +1,4 @@
-import { auth } from '@/app/(auth)/auth';
+import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';
 import { getChatsByUserId } from '@/lib/db/queries';
 import { ChatSDKError } from '@/lib/errors';
@@ -15,16 +15,15 @@ export async function GET(request: NextRequest) {
       'bad_request:api',
       'Only one of starting_after or ending_before can be provided.',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:chat').toResponse();
   }
 
   const chats = await getChatsByUserId({
-    id: session.user.id,
+    id: user.id, // Use Supabase user ID
     limit,
     startingAfter,
     endingBefore,

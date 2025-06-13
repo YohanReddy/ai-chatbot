@@ -1,4 +1,4 @@
-import type { UserType } from '@/app/(auth)/auth';
+import type { UserType } from '@/lib/supabase/types';
 import type { ChatModel } from './models';
 
 interface Entitlements {
@@ -7,14 +7,6 @@ interface Entitlements {
 }
 
 export const entitlementsByUserType: Record<UserType, Entitlements> = {
-  /*
-   * For users without an account
-   */
-  guest: {
-    maxMessagesPerDay: 20,
-    availableChatModelIds: ['chat-model', 'chat-model-reasoning'],
-  },
-
   /*
    * For users with an account
    */

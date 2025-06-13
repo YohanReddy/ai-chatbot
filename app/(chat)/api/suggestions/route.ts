@@ -1,4 +1,4 @@
-import { auth } from '@/app/(auth)/auth';
+import { createClient } from '@/lib/supabase/server';
 import { getSuggestionsByDocumentId } from '@/lib/db/queries';
 import { ChatSDKError } from '@/lib/errors';
 
@@ -11,11 +11,10 @@ export async function GET(request: Request) {
       'bad_request:api',
       'Parameter documentId is required.',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:suggestions').toResponse();
   }
 
@@ -27,9 +26,7 @@ export async function GET(request: Request) {
 
   if (!suggestion) {
     return Response.json([], { status: 200 });
-  }
-
-  if (suggestion.userId !== session.user.id) {
+  }  if (suggestion.userId !== user.id) {
     return new ChatSDKError('forbidden:api').toResponse();
   }
 

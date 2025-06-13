@@ -8,8 +8,7 @@ import { toast } from '@/components/toast';
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
 
-import { login, type LoginActionState } from '../actions';
-import { useSession } from 'next-auth/react';
+import { signInAction } from '../actions';
 
 export default function Page() {
   const router = useRouter();
@@ -17,32 +16,23 @@ export default function Page() {
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
 
-  const [state, formAction] = useActionState<LoginActionState, FormData>(
-    login,
-    {
-      status: 'idle',
+  const [state, formAction] = useActionState<any, FormData>(
+    async (_: any, formData: FormData) => {
+      return await signInAction(formData);
     },
+    {},
   );
 
-  const { update: updateSession } = useSession();
-
   useEffect(() => {
-    if (state.status === 'failed') {
+    if (state?.error) {
       toast({
         type: 'error',
-        description: 'Invalid credentials!',
+        description: state.error,
       });
-    } else if (state.status === 'invalid_data') {
-      toast({
-        type: 'error',
-        description: 'Failed validating your submission!',
-      });
-    } else if (state.status === 'success') {
-      setIsSuccessful(true);
-      updateSession();
-      router.refresh();
+    } else if (state === undefined) {
+      // signInAction redirects on success, so nothing to do here
     }
-  }, [state.status]);
+  }, [state, router]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get('email') as string);

@@ -1,4 +1,4 @@
-import { auth } from '@/app/(auth)/auth';
+import { createClient } from '@/lib/supabase/server';
 import { getChatById, getVotesByChatId, voteMessage } from '@/lib/db/queries';
 import { ChatSDKError } from '@/lib/errors';
 
@@ -11,11 +11,10 @@ export async function GET(request: Request) {
       'bad_request:api',
       'Parameter chatId is required.',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:vote').toResponse();
   }
 
@@ -25,7 +24,7 @@ export async function GET(request: Request) {
     return new ChatSDKError('not_found:chat').toResponse();
   }
 
-  if (chat.userId !== session.user.id) {
+  if (chat.userId !== user.id) {
     return new ChatSDKError('forbidden:vote').toResponse();
   }
 
@@ -47,11 +46,10 @@ export async function PATCH(request: Request) {
       'bad_request:api',
       'Parameters chatId, messageId, and type are required.',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:vote').toResponse();
   }
 
@@ -61,7 +59,7 @@ export async function PATCH(request: Request) {
     return new ChatSDKError('not_found:vote').toResponse();
   }
 
-  if (chat.userId !== session.user.id) {
+  if (chat.userId !== user.id) {
     return new ChatSDKError('forbidden:vote').toResponse();
   }
 

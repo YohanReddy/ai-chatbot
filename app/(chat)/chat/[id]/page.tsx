@@ -1,13 +1,14 @@
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 
-import { auth } from '@/app/(auth)/auth';
 import { Chat } from '@/components/chat';
 import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
 import { DataStreamHandler } from '@/components/data-stream-handler';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import type { DBMessage } from '@/lib/db/schema';
 import type { Attachment, UIMessage } from 'ai';
+import { createClient } from '@/lib/supabase/server';
+import type { AuthUser } from '@/lib/supabase/types';
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -17,19 +18,21 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
   if (!chat) {
     notFound();
   }
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session) {
-    redirect('/api/auth/guest');
+  if (error || !user) {    redirect('/login');
   }
+  
+  // Create AuthUser directly from Supabase user
+  const authUser: AuthUser = {
+    id: user.id,
+    email: user.email || '',
+    type: 'regular'
+  };
 
   if (chat.visibility === 'private') {
-    if (!session.user) {
-      return notFound();
-    }
-
-    if (session.user.id !== chat.userId) {
+    if (authUser.id !== chat.userId) {
       return notFound();
     }
   }
@@ -62,8 +65,8 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           initialMessages={convertToUIMessages(messagesFromDb)}
           initialChatModel={DEFAULT_CHAT_MODEL}
           initialVisibilityType={chat.visibility}
-          isReadonly={session?.user?.id !== chat.userId}
-          session={session}
+          isReadonly={authUser.id !== chat.userId}
+          session={authUser}
           autoResume={true}
         />
         <DataStreamHandler id={id} />
@@ -78,8 +81,8 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         initialMessages={convertToUIMessages(messagesFromDb)}
         initialChatModel={chatModelFromCookie.value}
         initialVisibilityType={chat.visibility}
-        isReadonly={session?.user?.id !== chat.userId}
-        session={session}
+        isReadonly={authUser.id !== chat.userId}
+        session={authUser}
         autoResume={true}
       />
       <DataStreamHandler id={id} />

@@ -5,15 +5,14 @@ import {
   smoothStream,
   streamText,
 } from 'ai';
-import { auth, type UserType } from '@/app/(auth)/auth';
+import { createClient } from '@/lib/supabase/server';
+import type { UserType, AuthUser } from '@/lib/supabase/types';
 import { type RequestHints, systemPrompt } from '@/lib/ai/prompts';
 import {
-  createStreamId,
   deleteChatById,
   getChatById,
   getMessageCountByUserId,
   getMessagesByChatId,
-  getStreamIdsByChatId,
   saveChat,
   saveMessages,
 } from '@/lib/db/queries';
@@ -28,38 +27,10 @@ import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
 import { geolocation } from '@vercel/functions';
-import {
-  createResumableStreamContext,
-  type ResumableStreamContext,
-} from 'resumable-stream';
-import { after } from 'next/server';
 import type { Chat } from '@/lib/db/schema';
-import { differenceInSeconds } from 'date-fns';
 import { ChatSDKError } from '@/lib/errors';
 
 export const maxDuration = 60;
-
-let globalStreamContext: ResumableStreamContext | null = null;
-
-function getStreamContext() {
-  if (!globalStreamContext) {
-    try {
-      globalStreamContext = createResumableStreamContext({
-        waitUntil: after,
-      });
-    } catch (error: any) {
-      if (error.message.includes('REDIS_URL')) {
-        console.log(
-          ' > Resumable streams are disabled due to missing REDIS_URL',
-        );
-      } else {
-        console.error(error);
-      }
-    }
-  }
-
-  return globalStreamContext;
-}
 
 export async function POST(request: Request) {
   let requestBody: PostRequestBody;
@@ -70,43 +41,50 @@ export async function POST(request: Request) {
   } catch (_) {
     return new ChatSDKError('bad_request:api').toResponse();
   }
-
   try {
     const { id, message, selectedChatModel, selectedVisibilityType } =
       requestBody;
 
-    const session = await auth();
+    const supabase = await createClient();
+    const { data: { user }, error } = await supabase.auth.getUser();
 
-    if (!session?.user) {
+    if (error || !user) {
       return new ChatSDKError('unauthorized:chat').toResponse();
-    }
+    }    console.log('🔐 Supabase auth user:', {
+      id: user.id,
+      email: user.email,
+      keys: Object.keys(user)
+    });
 
-    const userType: UserType = session.user.type;
+    const authUser: AuthUser = {
+      id: user.id, // Use Supabase user ID directly
+      email: user.email || '',
+      type: 'regular'
+    };
 
     const messageCount = await getMessageCountByUserId({
-      id: session.user.id,
+      id: user.id, // Use Supabase user ID
       differenceInHours: 24,
     });
 
-    if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
+    if (messageCount > entitlementsByUserType[authUser.type].maxMessagesPerDay) {
       return new ChatSDKError('rate_limit:chat').toResponse();
     }
 
-    const chat = await getChatById({ id });
-
-    if (!chat) {
+    const chat = await getChatById({ id });    if (!chat) {
+      console.log('💬 Creating new chat with user ID:', user.id);
       const title = await generateTitleFromUserMessage({
         message,
       });
-
+      
       await saveChat({
         id,
-        userId: session.user.id,
+        userId: user.id, // Use Supabase user ID
         title,
         visibility: selectedVisibilityType,
       });
     } else {
-      if (chat.userId !== session.user.id) {
+      if (chat.userId !== user.id) { // Compare with Supabase user ID
         return new ChatSDKError('forbidden:chat').toResponse();
       }
     }
@@ -141,9 +119,6 @@ export async function POST(request: Request) {
       ],
     });
 
-    const streamId = generateUUID();
-    await createStreamId({ streamId, chatId: id });
-
     const stream = createDataStream({
       execute: (dataStream) => {
         const result = streamText({
@@ -164,15 +139,14 @@ export async function POST(request: Request) {
           experimental_generateMessageId: generateUUID,
           tools: {
             getWeather,
-            createDocument: createDocument({ session, dataStream }),
-            updateDocument: updateDocument({ session, dataStream }),
+            createDocument: createDocument({ user: authUser, dataStream }),
+            updateDocument: updateDocument({ user: authUser, dataStream }),
             requestSuggestions: requestSuggestions({
-              session,
+              user: authUser,
               dataStream,
             }),
-          },
-          onFinish: async ({ response }) => {
-            if (session.user?.id) {
+          },          onFinish: async ({ response }) => {
+            if (user.id) {
               try {
                 const assistantId = getTrailingMessageId({
                   messages: response.messages.filter(
@@ -224,15 +198,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const streamContext = getStreamContext();
-
-    if (streamContext) {
-      return new Response(
-        await streamContext.resumableStream(streamId, () => stream),
-      );
-    } else {
-      return new Response(stream);
-    }
+    return new Response(stream);
   } catch (error) {
     if (error instanceof ChatSDKError) {
       return error.toResponse();
@@ -241,98 +207,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const streamContext = getStreamContext();
-  const resumeRequestedAt = new Date();
-
-  if (!streamContext) {
-    return new Response(null, { status: 204 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const chatId = searchParams.get('chatId');
-
-  if (!chatId) {
-    return new ChatSDKError('bad_request:api').toResponse();
-  }
-
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatSDKError('unauthorized:chat').toResponse();
-  }
-
-  let chat: Chat;
-
-  try {
-    chat = await getChatById({ id: chatId });
-  } catch {
-    return new ChatSDKError('not_found:chat').toResponse();
-  }
-
-  if (!chat) {
-    return new ChatSDKError('not_found:chat').toResponse();
-  }
-
-  if (chat.visibility === 'private' && chat.userId !== session.user.id) {
-    return new ChatSDKError('forbidden:chat').toResponse();
-  }
-
-  const streamIds = await getStreamIdsByChatId({ chatId });
-
-  if (!streamIds.length) {
-    return new ChatSDKError('not_found:stream').toResponse();
-  }
-
-  const recentStreamId = streamIds.at(-1);
-
-  if (!recentStreamId) {
-    return new ChatSDKError('not_found:stream').toResponse();
-  }
-
-  const emptyDataStream = createDataStream({
-    execute: () => {},
-  });
-
-  const stream = await streamContext.resumableStream(
-    recentStreamId,
-    () => emptyDataStream,
-  );
-
-  /*
-   * For when the generation is streaming during SSR
-   * but the resumable stream has concluded at this point.
-   */
-  if (!stream) {
-    const messages = await getMessagesByChatId({ id: chatId });
-    const mostRecentMessage = messages.at(-1);
-
-    if (!mostRecentMessage) {
-      return new Response(emptyDataStream, { status: 200 });
-    }
-
-    if (mostRecentMessage.role !== 'assistant') {
-      return new Response(emptyDataStream, { status: 200 });
-    }
-
-    const messageCreatedAt = new Date(mostRecentMessage.createdAt);
-
-    if (differenceInSeconds(resumeRequestedAt, messageCreatedAt) > 15) {
-      return new Response(emptyDataStream, { status: 200 });
-    }
-
-    const restoredStream = createDataStream({
-      execute: (buffer) => {
-        buffer.writeData({
-          type: 'append-message',
-          message: JSON.stringify(mostRecentMessage),
-        });
-      },
-    });
-
-    return new Response(restoredStream, { status: 200 });
-  }
-
-  return new Response(stream, { status: 200 });
+  return new Response(null, { status: 204 });
 }
 
 export async function DELETE(request: Request) {
@@ -342,16 +217,16 @@ export async function DELETE(request: Request) {
   if (!id) {
     return new ChatSDKError('bad_request:api').toResponse();
   }
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:chat').toResponse();
   }
 
   const chat = await getChatById({ id });
 
-  if (chat.userId !== session.user.id) {
+  if (chat.userId !== user.id) {
     return new ChatSDKError('forbidden:chat').toResponse();
   }
 

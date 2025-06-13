@@ -1,4 +1,4 @@
-import { auth } from '@/app/(auth)/auth';
+import { createClient } from '@/lib/supabase/server';
 import type { ArtifactKind } from '@/components/artifact';
 import {
   deleteDocumentsByIdAfterTimestamp,
@@ -16,11 +16,10 @@ export async function GET(request: Request) {
       'bad_request:api',
       'Parameter id is missing',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:document').toResponse();
   }
 
@@ -32,7 +31,7 @@ export async function GET(request: Request) {
     return new ChatSDKError('not_found:document').toResponse();
   }
 
-  if (document.userId !== session.user.id) {
+  if (document.userId !== user.id) {
     return new ChatSDKError('forbidden:document').toResponse();
   }
 
@@ -48,11 +47,10 @@ export async function POST(request: Request) {
       'bad_request:api',
       'Parameter id is required.',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('not_found:document').toResponse();
   }
 
@@ -64,11 +62,10 @@ export async function POST(request: Request) {
     await request.json();
 
   const documents = await getDocumentsById({ id });
-
   if (documents.length > 0) {
     const [document] = documents;
 
-    if (document.userId !== session.user.id) {
+    if (document.userId !== user.id) {
       return new ChatSDKError('forbidden:document').toResponse();
     }
   }
@@ -78,7 +75,7 @@ export async function POST(request: Request) {
     content,
     title,
     kind,
-    userId: session.user.id,
+    userId: user.id, // Use Supabase user ID
   });
 
   return Response.json(document, { status: 200 });
@@ -101,11 +98,10 @@ export async function DELETE(request: Request) {
       'bad_request:api',
       'Parameter timestamp is required.',
     ).toResponse();
-  }
+  }  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  const session = await auth();
-
-  if (!session?.user) {
+  if (error || !user) {
     return new ChatSDKError('unauthorized:document').toResponse();
   }
 
@@ -113,7 +109,7 @@ export async function DELETE(request: Request) {
 
   const [document] = documents;
 
-  if (document.userId !== session.user.id) {
+  if (document.userId !== user.id) {
     return new ChatSDKError('forbidden:document').toResponse();
   }
 
