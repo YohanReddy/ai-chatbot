@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useState } from 'react';
 
-import { AuthForm } from '@/components/auth-form';
-import { SubmitButton } from '@/components/submit-button';
+import { AuthForm } from '@/app/chat/components/auth-form';
+import { SubmitButton } from '@/app/chat/components/submit-button';
 
 import { signUpAction } from '../actions';
-import { toast } from '@/components/toast';
+import { toast } from '@/app/chat/components/toast';
 
 export default function Page() {
   const router = useRouter();
@@ -32,7 +32,7 @@ export default function Page() {
     } else if (state?.success) {
       toast({ type: 'success', description: state.success });
       setIsSuccessful(true);
-      router.push('/');
+      router.push('/chat');
       router.refresh();
     }
   }, [state, router]);

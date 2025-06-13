@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useState } from 'react';
-import { toast } from '@/components/toast';
+import { toast } from '@/app/chat/components/toast';
 
-import { AuthForm } from '@/components/auth-form';
-import { SubmitButton } from '@/components/submit-button';
+import { AuthForm } from '@/app/chat/components/auth-form';
+import { SubmitButton } from '@/app/chat/components/submit-button';
 
 import { signInAction } from '../actions';
 
